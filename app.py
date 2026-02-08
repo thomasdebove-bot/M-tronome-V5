@@ -1184,6 +1184,46 @@ PAGINATION_JS = r"""
     pages.slice(1).forEach(page => page.remove());
   }
 
+  function getZoneSplitData(zone){
+    const title = zone.querySelector('.zoneTitle');
+    const table = zone.querySelector('table.crTable');
+    const tbody = table?.querySelector('tbody');
+    const rows = tbody ? Array.from(tbody.children) : [];
+    const rowHeights = rows.map(row => row.getBoundingClientRect().height || row.offsetHeight || 0);
+    const tableRect = table?.getBoundingClientRect().height || table?.offsetHeight || 0;
+    const rowsSum = rowHeights.reduce((sum, h) => sum + h, 0);
+    const tableOverhead = Math.max(0, tableRect - rowsSum);
+    const titleHeight = title?.getBoundingClientRect().height || title?.offsetHeight || 0;
+    return {rows, rowHeights, tableOverhead, titleHeight};
+  }
+
+  function cloneZoneShell(zone){
+    const clone = zone.cloneNode(true);
+    const tbody = clone.querySelector('tbody');
+    if(tbody){ tbody.innerHTML = ''; }
+    return clone;
+  }
+
+  function buildZoneChunk(zone, data, startIndex, maxHeight){
+    const {rows, rowHeights, tableOverhead, titleHeight} = data;
+    const total = rows.length;
+    let height = titleHeight + tableOverhead;
+    let endIndex = startIndex;
+    while(endIndex < total){
+      const rowHeight = rowHeights[endIndex] || 0;
+      if(endIndex > startIndex && height + rowHeight > maxHeight){ break; }
+      height += rowHeight;
+      endIndex += 1;
+      if(endIndex === startIndex + 1 && height > maxHeight){ break; }
+    }
+    const chunk = cloneZoneShell(zone);
+    const tbody = chunk.querySelector('tbody');
+    for(let i=startIndex;i<endIndex;i++){
+      tbody.appendChild(rows[i]);
+    }
+    return {chunk, nextIndex: endIndex, height};
+  }
+
   function paginate(){
     const container = document.querySelector('.reportPages');
     const firstPage = container?.querySelector('.page--report');
@@ -1193,6 +1233,7 @@ PAGINATION_JS = r"""
     const blocks = Array.from(container.querySelectorAll('.reportBlock')).map(block => ({
       node: block,
       height: block.getBoundingClientRect().height || block.offsetHeight || 0,
+      splitData: block.classList.contains('zoneBlock') ? getZoneSplitData(block) : null,
     }));
 
     blocks.forEach(({node}) => node.remove());
@@ -1204,7 +1245,36 @@ PAGINATION_JS = r"""
     let used = 0;
     const template = document.getElementById('report-page-template');
 
-    blocks.forEach(({node, height}) => {
+    blocks.forEach(({node, height, splitData}) => {
+      if(splitData && splitData.rows.length){
+        let rowIndex = 0;
+        while(rowIndex < splitData.rows.length){
+          const remaining = available - used;
+          if(remaining <= splitData.titleHeight + splitData.tableOverhead && template && used > 0){
+            const clone = template.content.firstElementChild.cloneNode(true);
+            container.appendChild(clone);
+            currentPage = clone;
+            currentBlocks = clone.querySelector('.reportBlocks');
+            available = calcAvailable(currentPage, false);
+            used = 0;
+          }
+          const maxHeight = Math.max(available - used, splitData.titleHeight + splitData.tableOverhead);
+          const {chunk, nextIndex, height: chunkHeight} = buildZoneChunk(node, splitData, rowIndex, maxHeight);
+          if(used > 0 && used + chunkHeight > available && template){
+            const clone = template.content.firstElementChild.cloneNode(true);
+            container.appendChild(clone);
+            currentPage = clone;
+            currentBlocks = clone.querySelector('.reportBlocks');
+            available = calcAvailable(currentPage, false);
+            used = 0;
+          }
+          currentBlocks.appendChild(chunk);
+          const actualHeight = chunk.getBoundingClientRect().height || chunkHeight;
+          used += actualHeight;
+          rowIndex = nextIndex;
+        }
+        return;
+      }
       if(used > 0 && used + height > available && template){
         const clone = template.content.firstElementChild.cloneNode(true);
         container.appendChild(clone);
@@ -1214,7 +1284,8 @@ PAGINATION_JS = r"""
         used = 0;
       }
       currentBlocks.appendChild(node);
-      used += height;
+      const actualHeight = node.getBoundingClientRect().height || height;
+      used += actualHeight;
     });
   }
 
