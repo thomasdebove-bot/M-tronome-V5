@@ -1,5 +1,8 @@
 $ErrorActionPreference = "Stop"
 
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $ScriptDir
+
 Write-Host "==> Creating build environment"
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
