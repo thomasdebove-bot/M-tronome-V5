@@ -1239,6 +1239,16 @@ PAGINATION_JS = r"""
       endIndex += 1;
       if(endIndex === startIndex + 1 && height > maxHeight){ break; }
     }
+    if(endIndex > startIndex && rows[endIndex - 1]?.classList.contains('sessionSubRow')){
+      endIndex -= 1;
+    }
+    if(endIndex === startIndex && rows[startIndex]?.classList.contains('sessionSubRow') && startIndex + 1 < total){
+      endIndex = Math.min(startIndex + 2, total);
+    }
+    height = titleHeight + tableOverhead;
+    for(let i=startIndex;i<endIndex;i++){
+      height += rowHeights[i] || 0;
+    }
     const chunk = cloneZoneShell(zone);
     const tbody = chunk.querySelector('tbody');
     for(let i=startIndex;i<endIndex;i++){
@@ -1314,6 +1324,10 @@ PAGINATION_JS = r"""
   }
 
   window.repaginateReport = paginate;
+  window.refreshPagination = function(){
+    if(!window.repaginateReport){ return; }
+    requestAnimationFrame(() => window.repaginateReport());
+  };
   window.addEventListener('load', () => {
     requestAnimationFrame(paginate);
   });
@@ -1734,7 +1748,7 @@ def render_cr(
     actions_html = f"""
       <div class="actions noPrint">
         <button class="btn" type="button" onclick="window.print()">Imprimer / PDF</button>
-        <button class="btn secondary editCompact" type="button" onclick="window.repaginateReport && window.repaginateReport()">Recalculer la mise en page</button>
+        <button class="btn secondary editCompact" type="button" onclick="window.refreshPagination && window.refreshPagination()">Recalculer la mise en page</button>
         <button class="btn secondary editCompact" id="btnQualityCheck" type="button">Qualité du texte</button>
         <button class="btn secondary editCompact" id="btnAnalysis" type="button">Analyse</button>
         <button class="btn secondary editCompact" id="btnRange" type="button" onclick="toggleRangePanel()">Choisir une période</button>
