@@ -55,10 +55,22 @@ PROJECTS_PATH = os.getenv(
     "METRONOME_PROJECTS",
     r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Projects.csv",
 )
-LOGO_TEMPO_PATH = os.getenv("METRONOME_LOGO", r"C:\tempo-cr\Logo TEMPO.png")
-LOGO_RYTHME_PATH = os.getenv("METRONOME_LOGO_RYTHME", r"C:\tempo-cr\Rythme.png")
-LOGO_T_MARK_PATH = os.getenv("METRONOME_LOGO_TMARK", r"C:\tempo-cr\T logo.png")
-LOGO_QR_PATH = os.getenv("METRONOME_QR", r"C:\tempo-cr\QR CODE.png")
+LOGO_TEMPO_PATH = os.getenv(
+    "METRONOME_LOGO",
+    r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Content\Logo TEMPO.png",
+)
+LOGO_RYTHME_PATH = os.getenv(
+    "METRONOME_LOGO_RYTHME",
+    r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Content\Rythme.png",
+)
+LOGO_T_MARK_PATH = os.getenv(
+    "METRONOME_LOGO_TMARK",
+    r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Content\T logo.png",
+)
+LOGO_QR_PATH = os.getenv(
+    "METRONOME_QR",
+    r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Content\QR CODE.png",
+)
 DOCUMENTS_PATH = os.getenv(
     "METRONOME_DOCUMENTS",
     r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Documents.csv",
