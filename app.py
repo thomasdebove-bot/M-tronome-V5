@@ -58,6 +58,7 @@ PROJECTS_PATH = os.getenv(
 LOGO_TEMPO_PATH = os.getenv("METRONOME_LOGO", r"C:\tempo-cr\Logo TEMPO.png")
 LOGO_RYTHME_PATH = os.getenv("METRONOME_LOGO_RYTHME", r"C:\tempo-cr\Rythme.png")
 LOGO_T_MARK_PATH = os.getenv("METRONOME_LOGO_TMARK", r"C:\tempo-cr\T logo.png")
+LOGO_QR_PATH = os.getenv("METRONOME_QR", r"C:\tempo-cr\QR CODE.png")
 DOCUMENTS_PATH = os.getenv(
     "METRONOME_DOCUMENTS",
     r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Documents.csv",
@@ -1050,8 +1051,6 @@ RESIZE_TOP_JS = r"""
 RESIZE_COLUMNS_JS = r"""
 (function(){
   const root = document.documentElement;
-  const grips = document.querySelectorAll('.colGrip');
-  if(!grips.length) return;
   const map = {
     type: '--col-type',
     comment: '--col-comment',
@@ -1078,15 +1077,15 @@ RESIZE_COLUMNS_JS = r"""
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
   }
-  grips.forEach(grip => {
-    grip.addEventListener('mousedown', (e) => {
-      active = grip;
-      startX = e.clientX;
-      const current = getComputedStyle(root).getPropertyValue(map[grip.dataset.col]).trim().replace('%','');
-      startPct = parseFloat(current || '0');
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
+  document.addEventListener('mousedown', (e) => {
+    const grip = e.target.closest('.colGrip');
+    if(!grip) return;
+    active = grip;
+    startX = e.clientX;
+    const current = getComputedStyle(root).getPropertyValue(map[grip.dataset.col]).trim().replace('%','');
+    startPct = parseFloat(current || '0');
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   });
 })();
 """
@@ -1518,7 +1517,6 @@ select{{width:100%;padding:12px 12px;border-radius:12px;border:1px solid var(--b
         <button class="btn" type="button" onclick="openCR()">Ouvrir le compte-rendu</button>
       </div>
 
-      <div class="hint">CR généré depuis METRONOME (Entries / Meetings / Companies / Projects).</div>
     </div>
   </div>
 
@@ -2054,13 +2052,7 @@ def render_cr(
             zones_html_parts.append(zone_table_html)
 
     zones_html = "".join(zones_html_parts)
-    report_note_html = """
-      <div class="reportBlock reportNote">
-        <div class="muted" style="font-weight:800">
-          TEMPO • Document généré automatiquement — vérifier les échéances critiques avant diffusion.
-        </div>
-      </div>
-    """
+    report_note_html = ""
 
     # -------------------------
     # CSS
@@ -2109,7 +2101,9 @@ body{{padding:14px 14px 14px 280px;}}
 .coverHeroCurve{{position:absolute;left:50%;bottom:-95px;width:135%;height:190px;transform:translateX(-50%);background:#fff;border-radius:50% 50% 0 0 / 100% 100% 0 0;z-index:2}}
 .coverHeroLogoWrap{{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:4;background:#fff;padding:10px 18px;border-radius:8px;box-shadow:0 6px 18px rgba(2,6,23,.12)}}
 .coverHeroLogo{{height:110px;width:auto;display:block}}
-.coverNoteCenter{{text-align:center;padding:2px 10px 8px 10px;font-weight:900}}
+.coverNoteCenter{{text-align:center;padding:10px 16px 12px 16px;font-weight:900;display:flex;flex-direction:column;align-items:center;gap:10px}}
+.coverAppNote{{margin-top:8px;font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:14px;line-height:1.45;color:#f97316;font-style:italic;font-weight:600;max-width:640px}}
+.coverQr{{margin-top:6px;height:110px;width:auto}}
 .coverProjectTitle{{font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:22px;line-height:1.2;color:#f59e0b;font-weight:700;letter-spacing:.5px;text-transform:uppercase}}
 .coverCrTitle{{margin-top:10px;font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:22px;line-height:1.2;color:#0f3a40;font-weight:700}}
 .coverCrMeta{{margin-top:8px;font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:22px;line-height:1.2;color:#0f3a40;font-weight:700}}
@@ -2321,6 +2315,7 @@ body{{padding:14px 14px 14px 280px;}}
     tempo_logo = _logo_data_url(LOGO_TEMPO_PATH)
     logo_rythme = _logo_data_url(LOGO_RYTHME_PATH)
     logo_tmark = _logo_data_url(LOGO_T_MARK_PATH)
+    qr_logo = _logo_data_url(LOGO_QR_PATH)
     cover_html = ""
 
     next_meeting_date = (meet_date or ref_date) + timedelta(days=7)
@@ -2354,6 +2349,12 @@ body{{padding:14px 14px 14px 280px;}}
           </div>
           <div contenteditable='true' class='nextMeetingLine3'>BASE VIE — adresse à compléter</div>
         </div>
+        <div class='coverAppNote'>
+          Téléchargez gratuitement l’application de gestion de projet METRONOME. L’application développée par TEMPO
+          dédiée à la gestion de projet. Celle-ci vous permettra de retrouver l’intégralité des réunions de synthèse, comptes rendu,
+          planning et suivi des tâches dans votre smartphone.
+        </div>
+        {("<img class='coverQr' src='" + qr_logo + "' alt='QR code METRONOME' />") if qr_logo else ""}
       </div>
     """
 
@@ -2442,7 +2443,7 @@ body{{padding:14px 14px 14px 280px;}}
       </div>
       <div class="docFooter">
         <div class="footLeft">{"<img class='footImg footMark' src='" + logo_tmark + "' alt='' />" if logo_tmark else ""}</div>
-        <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">104/106 rue Oberkampf (Cité du figuier) — 75011 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
+        <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">35, rue Beaubourg, 75003 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
         <div class="footRight"></div>
       </div>
     </section>
@@ -2462,7 +2463,7 @@ body{{padding:14px 14px 14px 280px;}}
         </div>
         <div class="docFooter">
           <div class="footLeft">{"<img class='footImg footMark' src='" + logo_tmark + "' alt='' />" if logo_tmark else ""}</div>
-          <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">104/106 rue Oberkampf (Cité du figuier) — 75011 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
+          <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">35, rue Beaubourg, 75003 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
           <div class="footRight"></div>
         </div>
       </section>
@@ -2479,7 +2480,7 @@ body{{padding:14px 14px 14px 280px;}}
       </div>
       <div class="docFooter">
         <div class="footLeft">{"<img class='footImg footMark' src='" + logo_tmark + "' alt='' />" if logo_tmark else ""}</div>
-        <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">104/106 rue Oberkampf (Cité du figuier) — 75011 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
+        <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">35, rue Beaubourg, 75003 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
         <div class="footRight"></div>
       </div>
     </section>
