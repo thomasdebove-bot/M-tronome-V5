@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import os
-
+import sys
 import threading
 import webbrowser
+from pathlib import Path
 
 import uvicorn
 
 
 def main() -> None:
+    exe_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    sys.path.insert(0, str(exe_dir))
     host = os.getenv("METRONOME_HOST", "0.0.0.0")
     port = int(os.getenv("METRONOME_PORT", "8090"))
 
