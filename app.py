@@ -2275,6 +2275,8 @@ body{{padding:14px 14px 14px 280px;}}
 .annexTable thead{{display:table-header-group}}
 .annexTable th,.annexTable td{{border-bottom:1px solid var(--border);padding:8px 6px;text-align:left;vertical-align:top}}
 .annexTable td:first-child{{width:90px;color:#2563eb;font-weight:900}}
+.annexTable td:last-child{{text-align:right}}
+.annexTable td:last-child .annexLink{{display:inline-block;text-align:right}}
 .annexTable th{{font-weight:900;background:#1f4e4f;color:#fff}}
 .annexTable .annexLink{{color:#f97316;font-weight:800;text-decoration:none}}
 .annexTable tr:last-child td{{border-bottom:none}}
