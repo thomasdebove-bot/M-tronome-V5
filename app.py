@@ -1143,6 +1143,10 @@ function clearRange(){
   url.searchParams.delete('range_end');
   window.location.href = url.toString();
 }
+
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnRange')?.addEventListener('click', toggleRangePanel);
+});
 """
 
 LAYOUT_CONTROLS_JS = r"""
