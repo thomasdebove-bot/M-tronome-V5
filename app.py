@@ -834,7 +834,10 @@ QUALITY_MODAL_CSS = r"""
 .qualityBadge{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:#fff1f2; border:1px solid #fecdd3; font-weight:900; color:#b91c1c}
 .qualityGrid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:10px}
 .qualityCard{border:1px solid #e2e8f0; border-radius:12px; padding:10px; background:#f8fafc}
-.qualityHighlight{background:#fee2e2; padding:0 4px; border-radius:4px; font-weight:900; color:#b91c1c}
+.qualityHighlight{background:#fee2e2; padding:0 4px; border-radius:4px; font-weight:900; color:#b91c1c; position:relative; cursor:help}
+.qualityHighlight:hover::after{content:attr(data-suggestion); position:absolute; left:0; top:100%; margin-top:6px; background:#111827; color:#fff; padding:6px 8px; border-radius:6px; font-size:11px; white-space:pre-wrap; z-index:20; min-width:140px; max-width:240px}
+.qualityHighlight:hover::before{content:""; position:absolute; left:10px; top:100%; border:6px solid transparent; border-bottom-color:#111827}
+.qualityFullText{margin-top:6px; line-height:1.4}
 .qualityTips{border-left:4px solid #b91c1c; padding:10px 12px; background:#fff1f2; border-radius:10px; margin-top:12px}
 .qualityItemTitle{color:#b91c1c; font-weight:900}
 """
@@ -901,22 +904,32 @@ QUALITY_MODAL_JS = r"""
           listEl.innerHTML = summary + "<div class='muted' style='margin-top:10px'>Aucune faute détectée.</div>";
           return;
         }
+        const escapeHtml = (v) => String(v || "").replace(/[&<>"']/g, (m) => ({
+          "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+        })[m]);
         const sections = issueAreas.map(area => {
           const items = (issuesByArea[area] || []).map(it => {
-            const ctx = it.context || "";
-            const highlight = it.context_offset != null && it.context_length != null
-              ? ctx.slice(0, it.context_offset) + "<span class='qualityHighlight'>" + ctx.slice(it.context_offset, it.context_offset + it.context_length) + "</span>" + ctx.slice(it.context_offset + it.context_length)
-              : ctx;
+            const text = it.text || it.context || "";
+            const offset = it.offset ?? it.context_offset;
+            const length = it.length ?? it.context_length;
+            const suggestion = it.replacements || it.message || "Suggestion";
+            let highlight = escapeHtml(text);
+            if(text && offset != null && length != null){
+              const safeText = escapeHtml(text);
+              const before = safeText.slice(0, offset);
+              const mid = safeText.slice(offset, offset + length);
+              const after = safeText.slice(offset + length);
+              highlight = `${before}<span class="qualityHighlight" data-suggestion="${escapeHtml(suggestion)}">${mid}</span>${after}`;
+            }
             return `
               <div class="item">
-                <div class="qualityItemTitle">${it.category || "Suggestion"} — ${it.message || ""}</div>
-                <div class="meta" style="margin-top:6px">Contexte: ${highlight || "—"}</div>
-                ${it.replacements ? `<div class="meta" style="margin-top:6px">Propositions: ${it.replacements}</div>` : ""}
+                <div class="qualityItemTitle">${escapeHtml(it.category || "Suggestion")}</div>
+                <div class="qualityFullText">${highlight || "—"}</div>
               </div>
             `;
           }).join("");
           return `
-            <div style="margin-top:16px;font-weight:900">Zone : ${area}</div>
+            <div style="margin-top:16px;font-weight:900">Zone : ${escapeHtml(area)}</div>
             ${items}
           `;
         }).join("");
@@ -2629,6 +2642,9 @@ def _quality_payload(text: str, language: str = "fr") -> Dict[str, object]:
                 "context_length": context.get("length"),
                 "replacements": repl,
                 "category": category.get("name", ""),
+                "offset": m.get("offset"),
+                "length": m.get("length"),
+                "text": text,
             }
         )
     return {"score": score, "total": errors, "issues": issues}
