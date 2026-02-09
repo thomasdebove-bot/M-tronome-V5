@@ -814,8 +814,10 @@ EDITOR_MEMO_MODAL_JS = r"""
     window.location.href = u.toString();
   };
 
-  document.querySelectorAll(".btnAddMemo").forEach(btn=>{
-    btn.addEventListener("click", ()=> open(btn.getAttribute("data-area")||""));
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".btnAddMemo");
+    if(!btn) return;
+    open(btn.getAttribute("data-area")||"");
   });
 })();
 """
@@ -2267,7 +2269,7 @@ body{{padding:14px 14px 14px 280px;}}
 .entryComment{{margin-top:8px;padding-left:12px;border-left:3px solid #e2e8f0}}
 .tagReminderGreen{{color:#16a34a;font-weight:900}}
 .thumbA{{display:inline-flex}}
-.commentText{{font-weight:700;line-height:1.25}}
+.commentText{{font-weight:400;line-height:1.25}}
 .tagReminder{{color:#b91c1c;font-weight:900}}
 .annexTable{{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;border:1px solid var(--border)}}
 .annexTable thead{{display:table-header-group}}
