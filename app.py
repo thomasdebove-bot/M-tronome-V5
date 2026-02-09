@@ -1803,6 +1803,7 @@ def render_cr(
           </div>
         </div>
         <div class="rangeActions">
+          <button class="btn secondary" type="button" onclick="toggleRangePanel()">Fermer</button>
           <button class="btn secondary" type="button" onclick="clearRange()">Réinitialiser</button>
           <button class="btn" type="button" onclick="applyRange()">Appliquer</button>
         </div>
