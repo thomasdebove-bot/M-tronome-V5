@@ -382,12 +382,22 @@ def _split_words(value: str) -> set[str]:
 
 
 def _logo_data_url(path: str) -> str:
-    if not path or not os.path.exists(path):
+    if not path:
+        return ""
+    normalized = os.path.normpath(path)
+    if not os.path.exists(normalized):
         return ""
     try:
-        with open(path, "rb") as f:
+        with open(normalized, "rb") as f:
             data = base64.b64encode(f.read()).decode("utf-8")
-        return f"data:image/png;base64,{data}"
+        ext = os.path.splitext(normalized)[1].lower()
+        if ext in {".jpg", ".jpeg"}:
+            mime = "image/jpeg"
+        elif ext == ".svg":
+            mime = "image/svg+xml"
+        else:
+            mime = "image/png"
+        return f"data:{mime};base64,{data}"
     except Exception:
         return ""
 
@@ -2139,6 +2149,7 @@ body{{padding:14px 14px 14px 280px;}}
 .coverNoteCenter{{text-align:center;padding:10px 16px 12px 16px;font-weight:900;display:flex;flex-direction:column;align-items:center;gap:10px}}
 .coverAppNote{{margin-top:8px;font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:14px;line-height:1.45;color:#f97316;font-style:italic;font-weight:600;max-width:640px}}
 .coverQr{{margin-top:6px;height:110px;width:auto}}
+@media print{{.coverQr{{display:block!important}}}}
 .coverProjectTitle{{font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:22px;line-height:1.2;color:#f59e0b;font-weight:700;letter-spacing:.5px;text-transform:uppercase}}
 .coverCrTitle{{margin-top:10px;font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:22px;line-height:1.2;color:#0f3a40;font-weight:700}}
 .coverCrMeta{{margin-top:8px;font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:22px;line-height:1.2;color:#0f3a40;font-weight:700}}
