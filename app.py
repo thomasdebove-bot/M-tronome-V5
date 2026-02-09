@@ -372,6 +372,15 @@ def _has_multiple_companies(value: str) -> bool:
     return len(parts) > 1
 
 
+def _split_words(value: str) -> set[str]:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return set()
+    raw = str(value).strip()
+    if not raw:
+        return set()
+    return {part for part in re.split(r"[^\w]+", raw) if part}
+
+
 def _logo_data_url(path: str) -> str:
     if not path or not os.path.exists(path):
         return ""
@@ -2616,24 +2625,46 @@ def api_memos(project: str = Query("", alias="project"), area: str = Query("", a
         return JSONResponse({"error": str(ex)}, status_code=500)
 
 
-def _quality_payload(text: str, language: str = "fr") -> Dict[str, object]:
-    if not text.strip():
+def _quality_payload(
+    text: str,
+    language: str = "fr",
+    ignore_terms: Optional[set[str]] = None,
+) -> Dict[str, object]:
+    cleaned_text = re.sub(r"\bnan\b", "", text, flags=re.IGNORECASE).strip()
+    if not cleaned_text:
         return {"score": 100, "total": 0, "issues": []}
+    ignore_terms = {t.lower() for t in (ignore_terms or set()) if t}
     url = "https://api.languagetool.org/v2/check"
-    data = urllib.parse.urlencode({"language": language, "text": text}).encode("utf-8")
+    data = urllib.parse.urlencode({"language": language, "text": cleaned_text}).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
     with urllib.request.urlopen(req, timeout=10) as resp:
         payload = json.loads(resp.read().decode("utf-8"))
     matches = payload.get("matches", [])
-    words = max(1, len(re.findall(r"\w+", text)))
-    errors = len(matches)
+    words = max(1, len(re.findall(r"\w+", cleaned_text)))
+    errors = 0
     score = max(0, int(100 - (errors / words) * 100))
     issues = []
     for m in matches:
+        offset = m.get("offset")
+        length = m.get("length")
+        match_text = (
+            cleaned_text[offset : offset + length] if offset is not None and length is not None else ""
+        )
+        match_text_stripped = match_text.strip()
+        if not match_text_stripped:
+            continue
+        match_lower = match_text_stripped.lower()
+        if match_lower == "nan" or match_lower in ignore_terms:
+            continue
+        if match_text_stripped.isupper() and len(match_text_stripped) > 2:
+            continue
+        if match_text_stripped.istitle() and len(match_text_stripped) > 2:
+            continue
         context = m.get("context", {}) or {}
         repl = ", ".join([r.get("value", "") for r in m.get("replacements", []) if r.get("value")])
         category = (m.get("rule", {}) or {}).get("category", {}) or {}
+        errors += 1
         issues.append(
             {
                 "message": m.get("message", ""),
@@ -2642,11 +2673,12 @@ def _quality_payload(text: str, language: str = "fr") -> Dict[str, object]:
                 "context_length": context.get("length"),
                 "replacements": repl,
                 "category": category.get("name", ""),
-                "offset": m.get("offset"),
-                "length": m.get("length"),
-                "text": text,
+                "offset": offset,
+                "length": length,
+                "text": cleaned_text,
             }
         )
+    score = max(0, int(100 - (errors / words) * 100))
     return {"score": score, "total": errors, "issues": issues}
 
 
@@ -2663,7 +2695,7 @@ def api_quality(
         rem_df = reminders_for_project(project_title=project, ref_date=ref_date, max_level=8)
         fol_df = followups_for_project(project_title=project, ref_date=ref_date, exclude_entry_ids=set())
 
-        def _items(df: pd.DataFrame) -> List[Dict[str, str]]:
+        def _items(df: pd.DataFrame, ignore_terms: set[str]) -> List[Dict[str, str]]:
             if df.empty:
                 return []
             df = _explode_areas(df.copy())
@@ -2672,19 +2704,46 @@ def api_quality(
                 title = str(r.get(E_COL_TITLE, "") or "").strip()
                 comment = str(r.get(E_COL_TASK_COMMENT_TEXT, "") or "").strip()
                 text = " ".join([t for t in [title, comment] if t]).strip()
+                text = re.sub(r"\bnan\b", "", text, flags=re.IGNORECASE).strip()
                 if not text:
                     continue
-                out.append({"area": str(r.get("__area_list__", "Général")), "text": text})
+                area = str(r.get("__area_list__", "Général"))
+                ignore_terms.add(area.lower())
+                ignore_terms.update(_split_words(area))
+                out.append({"area": area, "text": text})
             return out
-
-        items = _items(edf) + _items(rem_df) + _items(fol_df)
+        ignore_terms: set[str] = set()
+        if project:
+            ignore_terms.add(project.lower())
+            ignore_terms.update(_split_words(project))
+        company_terms = pd.concat(
+            [
+                edf.get(E_COL_COMPANY_TASK, pd.Series(dtype=str)),
+                rem_df.get(E_COL_COMPANY_TASK, pd.Series(dtype=str)),
+                fol_df.get(E_COL_COMPANY_TASK, pd.Series(dtype=str)),
+            ],
+            ignore_index=True,
+        )
+        owner_terms = pd.concat(
+            [
+                edf.get(E_COL_OWNER, pd.Series(dtype=str)),
+                rem_df.get(E_COL_OWNER, pd.Series(dtype=str)),
+                fol_df.get(E_COL_OWNER, pd.Series(dtype=str)),
+            ],
+            ignore_index=True,
+        )
+        for val in pd.concat([company_terms, owner_terms], ignore_index=True).dropna().astype(str):
+            ignore_terms.add(val.lower())
+            ignore_terms.update(_split_words(val))
+        items = _items(edf, ignore_terms) + _items(rem_df, ignore_terms) + _items(fol_df, ignore_terms)
         issues_by_area: Dict[str, List[Dict[str, object]]] = {}
         total_errors = 0
         total_words = 0
         for it in items:
-            payload = _quality_payload(it["text"], language="fr")
+            payload = _quality_payload(it["text"], language="fr", ignore_terms=ignore_terms)
             total_errors += int(payload.get("total", 0))
-            total_words += max(1, len(re.findall(r"\w+", it["text"])))
+            cleaned = re.sub(r"\bnan\b", "", it["text"], flags=re.IGNORECASE)
+            total_words += max(1, len(re.findall(r"\w+", cleaned)))
             if payload.get("issues"):
                 issues_by_area.setdefault(it["area"], []).extend(payload["issues"])
         score = max(0, int(100 - (total_errors / max(1, total_words)) * 100))
