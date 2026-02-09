@@ -1147,6 +1147,12 @@ function clearRange(){
 window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnRange')?.addEventListener('click', toggleRangePanel);
 });
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('#btnRange');
+  if(!btn) return;
+  toggleRangePanel();
+});
 """
 
 LAYOUT_CONTROLS_JS = r"""
