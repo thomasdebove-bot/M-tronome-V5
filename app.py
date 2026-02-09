@@ -1184,6 +1184,29 @@ PAGINATION_JS = r"""
     pages.slice(1).forEach(page => page.remove());
   }
 
+  function mergeZoneBlocks(container){
+    const zones = Array.from(container.querySelectorAll('.zoneBlock'));
+    const grouped = new Map();
+    zones.forEach(zone => {
+      const key = zone.getAttribute('data-zone-id') || '';
+      if(!grouped.has(key)){ grouped.set(key, []); }
+      grouped.get(key).push(zone);
+    });
+    grouped.forEach(group => {
+      if(group.length < 2){ return; }
+      const target = group[0];
+      const targetBody = target.querySelector('tbody');
+      if(!targetBody){ return; }
+      group.slice(1).forEach(zone => {
+        const body = zone.querySelector('tbody');
+        if(body){
+          Array.from(body.children).forEach(row => targetBody.appendChild(row));
+        }
+        zone.remove();
+      });
+    });
+  }
+
   function getZoneSplitData(zone){
     const title = zone.querySelector('.zoneTitle');
     const table = zone.querySelector('table.crTable');
@@ -1230,6 +1253,7 @@ PAGINATION_JS = r"""
     if(!container || !firstPage) return;
     const blocksContainer = firstPage.querySelector('.reportBlocks');
     if(!blocksContainer) return;
+    mergeZoneBlocks(container);
     const blocks = Array.from(container.querySelectorAll('.reportBlock')).map(block => ({
       node: block,
       height: block.getBoundingClientRect().height || block.offsetHeight || 0,
@@ -1878,7 +1902,7 @@ def render_cr(
             return ""
         zt = _escape(area_name)
         return f"""
-        <div class="zoneBlock reportBlock">
+        <div class="zoneBlock reportBlock" data-zone-id="{zt}">
           <div class="zoneTitle">
             <span>{zt}</span>
             <div class="zoneTools noPrint">
