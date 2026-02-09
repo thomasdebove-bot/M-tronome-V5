@@ -1734,6 +1734,7 @@ def render_cr(
     actions_html = f"""
       <div class="actions noPrint">
         <button class="btn" type="button" onclick="window.print()">Imprimer / PDF</button>
+        <button class="btn secondary editCompact" type="button" onclick="window.repaginateReport && window.repaginateReport()">Recalculer la mise en page</button>
         <button class="btn secondary editCompact" id="btnQualityCheck" type="button">Qualité du texte</button>
         <button class="btn secondary editCompact" id="btnAnalysis" type="button">Analyse</button>
         <button class="btn secondary editCompact" id="btnRange" type="button" onclick="toggleRangePanel()">Choisir une période</button>
