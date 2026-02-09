@@ -55,9 +55,22 @@ PROJECTS_PATH = os.getenv(
     "METRONOME_PROJECTS",
     r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Projects.csv",
 )
-LOGO_TEMPO_PATH = os.getenv("METRONOME_LOGO", r"C:\tempo-cr\Logo TEMPO.png")
-LOGO_RYTHME_PATH = os.getenv("METRONOME_LOGO_RYTHME", r"C:\tempo-cr\Rythme.png")
-LOGO_T_MARK_PATH = os.getenv("METRONOME_LOGO_TMARK", r"C:\tempo-cr\T logo.png")
+LOGO_TEMPO_PATH = os.getenv(
+    "METRONOME_LOGO",
+    r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Content\Logo TEMPO.png",
+)
+LOGO_RYTHME_PATH = os.getenv(
+    "METRONOME_LOGO_RYTHME",
+    r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Content\Rythme.png",
+)
+LOGO_T_MARK_PATH = os.getenv(
+    "METRONOME_LOGO_TMARK",
+    r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Content\T logo.png",
+)
+LOGO_QR_PATH = os.getenv(
+    "METRONOME_QR",
+    r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Content\QR CODE.png",
+)
 DOCUMENTS_PATH = os.getenv(
     "METRONOME_DOCUMENTS",
     r"\\192.168.10.100\02 - affaires\02.2 - SYNTHESE\ZZ - METRONOME\Documents.csv",
@@ -371,13 +384,32 @@ def _has_multiple_companies(value: str) -> bool:
     return len(parts) > 1
 
 
+def _split_words(value: str) -> set[str]:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return set()
+    raw = str(value).strip()
+    if not raw:
+        return set()
+    return {part for part in re.split(r"[^\w]+", raw) if part}
+
+
 def _logo_data_url(path: str) -> str:
-    if not path or not os.path.exists(path):
+    if not path:
+        return ""
+    normalized = os.path.normpath(path)
+    if not os.path.exists(normalized):
         return ""
     try:
-        with open(path, "rb") as f:
+        with open(normalized, "rb") as f:
             data = base64.b64encode(f.read()).decode("utf-8")
-        return f"data:image/png;base64,{data}"
+        ext = os.path.splitext(normalized)[1].lower()
+        if ext in {".jpg", ".jpeg"}:
+            mime = "image/jpeg"
+        elif ext == ".svg":
+            mime = "image/svg+xml"
+        else:
+            mime = "image/png"
+        return f"data:{mime};base64,{data}"
     except Exception:
         return ""
 
@@ -813,8 +845,10 @@ EDITOR_MEMO_MODAL_JS = r"""
     window.location.href = u.toString();
   };
 
-  document.querySelectorAll(".btnAddMemo").forEach(btn=>{
-    btn.addEventListener("click", ()=> open(btn.getAttribute("data-area")||""));
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".btnAddMemo");
+    if(!btn) return;
+    open(btn.getAttribute("data-area")||"");
   });
 })();
 """
@@ -831,7 +865,10 @@ QUALITY_MODAL_CSS = r"""
 .qualityBadge{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:#fff1f2; border:1px solid #fecdd3; font-weight:900; color:#b91c1c}
 .qualityGrid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:10px}
 .qualityCard{border:1px solid #e2e8f0; border-radius:12px; padding:10px; background:#f8fafc}
-.qualityHighlight{background:#fee2e2; padding:0 4px; border-radius:4px; font-weight:900; color:#b91c1c}
+.qualityHighlight{background:#fee2e2; padding:0 4px; border-radius:4px; font-weight:900; color:#b91c1c; position:relative; cursor:help}
+.qualityHighlight:hover::after{content:attr(data-suggestion); position:absolute; left:0; top:100%; margin-top:6px; background:#111827; color:#fff; padding:6px 8px; border-radius:6px; font-size:11px; white-space:pre-wrap; z-index:20; min-width:140px; max-width:240px}
+.qualityHighlight:hover::before{content:""; position:absolute; left:10px; top:100%; border:6px solid transparent; border-bottom-color:#111827}
+.qualityFullText{margin-top:6px; line-height:1.4}
 .qualityTips{border-left:4px solid #b91c1c; padding:10px 12px; background:#fff1f2; border-radius:10px; margin-top:12px}
 .qualityItemTitle{color:#b91c1c; font-weight:900}
 """
@@ -898,22 +935,32 @@ QUALITY_MODAL_JS = r"""
           listEl.innerHTML = summary + "<div class='muted' style='margin-top:10px'>Aucune faute détectée.</div>";
           return;
         }
+        const escapeHtml = (v) => String(v || "").replace(/[&<>"']/g, (m) => ({
+          "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+        })[m]);
         const sections = issueAreas.map(area => {
           const items = (issuesByArea[area] || []).map(it => {
-            const ctx = it.context || "";
-            const highlight = it.context_offset != null && it.context_length != null
-              ? ctx.slice(0, it.context_offset) + "<span class='qualityHighlight'>" + ctx.slice(it.context_offset, it.context_offset + it.context_length) + "</span>" + ctx.slice(it.context_offset + it.context_length)
-              : ctx;
+            const text = it.text || it.context || "";
+            const offset = it.offset ?? it.context_offset;
+            const length = it.length ?? it.context_length;
+            const suggestion = it.replacements || it.message || "Suggestion";
+            let highlight = escapeHtml(text);
+            if(text && offset != null && length != null){
+              const safeText = escapeHtml(text);
+              const before = safeText.slice(0, offset);
+              const mid = safeText.slice(offset, offset + length);
+              const after = safeText.slice(offset + length);
+              highlight = `${before}<span class="qualityHighlight" data-suggestion="${escapeHtml(suggestion)}">${mid}</span>${after}`;
+            }
             return `
               <div class="item">
-                <div class="qualityItemTitle">${it.category || "Suggestion"} — ${it.message || ""}</div>
-                <div class="meta" style="margin-top:6px">Contexte: ${highlight || "—"}</div>
-                ${it.replacements ? `<div class="meta" style="margin-top:6px">Propositions: ${it.replacements}</div>` : ""}
+                <div class="qualityItemTitle">${escapeHtml(it.category || "Suggestion")}</div>
+                <div class="qualityFullText">${highlight || "—"}</div>
               </div>
             `;
           }).join("");
           return `
-            <div style="margin-top:16px;font-weight:900">Zone : ${area}</div>
+            <div style="margin-top:16px;font-weight:900">Zone : ${escapeHtml(area)}</div>
             ${items}
           `;
         }).join("");
@@ -1050,8 +1097,6 @@ RESIZE_TOP_JS = r"""
 RESIZE_COLUMNS_JS = r"""
 (function(){
   const root = document.documentElement;
-  const grips = document.querySelectorAll('.colGrip');
-  if(!grips.length) return;
   const map = {
     type: '--col-type',
     comment: '--col-comment',
@@ -1078,15 +1123,15 @@ RESIZE_COLUMNS_JS = r"""
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
   }
-  grips.forEach(grip => {
-    grip.addEventListener('mousedown', (e) => {
-      active = grip;
-      startX = e.clientX;
-      const current = getComputedStyle(root).getPropertyValue(map[grip.dataset.col]).trim().replace('%','');
-      startPct = parseFloat(current || '0');
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
+  document.addEventListener('mousedown', (e) => {
+    const grip = e.target.closest('.colGrip');
+    if(!grip) return;
+    active = grip;
+    startX = e.clientX;
+    const current = getComputedStyle(root).getPropertyValue(map[grip.dataset.col]).trim().replace('%','');
+    startPct = parseFloat(current || '0');
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   });
 })();
 """
@@ -1120,6 +1165,16 @@ function clearRange(){
   url.searchParams.delete('range_end');
   window.location.href = url.toString();
 }
+
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnRange')?.addEventListener('click', toggleRangePanel);
+});
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('#btnRange');
+  if(!btn) return;
+  toggleRangePanel();
+});
 """
 
 LAYOUT_CONTROLS_JS = r"""
@@ -1184,15 +1239,90 @@ PAGINATION_JS = r"""
     pages.slice(1).forEach(page => page.remove());
   }
 
+  function mergeZoneBlocks(container){
+    const zones = Array.from(container.querySelectorAll('.zoneBlock'));
+    const grouped = new Map();
+    zones.forEach(zone => {
+      const key = zone.getAttribute('data-zone-id') || '';
+      if(!grouped.has(key)){ grouped.set(key, []); }
+      grouped.get(key).push(zone);
+    });
+    grouped.forEach(group => {
+      if(group.length < 2){ return; }
+      const target = group[0];
+      const targetBody = target.querySelector('tbody');
+      if(!targetBody){ return; }
+      group.slice(1).forEach(zone => {
+        const body = zone.querySelector('tbody');
+        if(body){
+          Array.from(body.children).forEach(row => targetBody.appendChild(row));
+        }
+        zone.remove();
+      });
+    });
+  }
+
+  function getZoneSplitData(zone){
+    const title = zone.querySelector('.zoneTitle');
+    const table = zone.querySelector('table.crTable');
+    const tbody = table?.querySelector('tbody');
+    const rows = tbody ? Array.from(tbody.children) : [];
+    const rowHeights = rows.map(row => row.getBoundingClientRect().height || row.offsetHeight || 0);
+    const tableRect = table?.getBoundingClientRect().height || table?.offsetHeight || 0;
+    const rowsSum = rowHeights.reduce((sum, h) => sum + h, 0);
+    const tableOverhead = Math.max(0, tableRect - rowsSum);
+    const titleHeight = title?.getBoundingClientRect().height || title?.offsetHeight || 0;
+    return {rows, rowHeights, tableOverhead, titleHeight};
+  }
+
+  function cloneZoneShell(zone){
+    const clone = zone.cloneNode(true);
+    const tbody = clone.querySelector('tbody');
+    if(tbody){ tbody.innerHTML = ''; }
+    return clone;
+  }
+
+  function buildZoneChunk(zone, data, startIndex, maxHeight){
+    const {rows, rowHeights, tableOverhead, titleHeight} = data;
+    const total = rows.length;
+    let height = titleHeight + tableOverhead;
+    let endIndex = startIndex;
+    while(endIndex < total){
+      const rowHeight = rowHeights[endIndex] || 0;
+      if(endIndex > startIndex && height + rowHeight > maxHeight){ break; }
+      height += rowHeight;
+      endIndex += 1;
+      if(endIndex === startIndex + 1 && height > maxHeight){ break; }
+    }
+    if(endIndex > startIndex && rows[endIndex - 1]?.classList.contains('sessionSubRow')){
+      endIndex -= 1;
+    }
+    if(endIndex === startIndex && rows[startIndex]?.classList.contains('sessionSubRow') && startIndex + 1 < total){
+      endIndex = Math.min(startIndex + 2, total);
+    }
+    height = titleHeight + tableOverhead;
+    for(let i=startIndex;i<endIndex;i++){
+      height += rowHeights[i] || 0;
+    }
+    const chunk = cloneZoneShell(zone);
+    const tbody = chunk.querySelector('tbody');
+    for(let i=startIndex;i<endIndex;i++){
+      tbody.appendChild(rows[i]);
+    }
+    return {chunk, nextIndex: endIndex, height};
+  }
+
   function paginate(){
     const container = document.querySelector('.reportPages');
     const firstPage = container?.querySelector('.page--report');
     if(!container || !firstPage) return;
     const blocksContainer = firstPage.querySelector('.reportBlocks');
     if(!blocksContainer) return;
+    mergeZoneBlocks(container);
     const blocks = Array.from(container.querySelectorAll('.reportBlock')).map(block => ({
       node: block,
       height: block.getBoundingClientRect().height || block.offsetHeight || 0,
+      splitData: block.classList.contains('zoneBlock') ? getZoneSplitData(block) : null,
     }));
 
     blocks.forEach(({node}) => node.remove());
@@ -1204,7 +1334,36 @@ PAGINATION_JS = r"""
     let used = 0;
     const template = document.getElementById('report-page-template');
 
-    blocks.forEach(({node, height}) => {
+    blocks.forEach(({node, height, splitData}) => {
+      if(splitData && splitData.rows.length){
+        let rowIndex = 0;
+        while(rowIndex < splitData.rows.length){
+          const remaining = available - used;
+          if(remaining <= splitData.titleHeight + splitData.tableOverhead && template && used > 0){
+            const clone = template.content.firstElementChild.cloneNode(true);
+            container.appendChild(clone);
+            currentPage = clone;
+            currentBlocks = clone.querySelector('.reportBlocks');
+            available = calcAvailable(currentPage, false);
+            used = 0;
+          }
+          const maxHeight = Math.max(available - used, splitData.titleHeight + splitData.tableOverhead);
+          const {chunk, nextIndex, height: chunkHeight} = buildZoneChunk(node, splitData, rowIndex, maxHeight);
+          if(used > 0 && used + chunkHeight > available && template){
+            const clone = template.content.firstElementChild.cloneNode(true);
+            container.appendChild(clone);
+            currentPage = clone;
+            currentBlocks = clone.querySelector('.reportBlocks');
+            available = calcAvailable(currentPage, false);
+            used = 0;
+          }
+          currentBlocks.appendChild(chunk);
+          const actualHeight = chunk.getBoundingClientRect().height || chunkHeight;
+          used += actualHeight;
+          rowIndex = nextIndex;
+        }
+        return;
+      }
       if(used > 0 && used + height > available && template){
         const clone = template.content.firstElementChild.cloneNode(true);
         container.appendChild(clone);
@@ -1214,11 +1373,16 @@ PAGINATION_JS = r"""
         used = 0;
       }
       currentBlocks.appendChild(node);
-      used += height;
+      const actualHeight = node.getBoundingClientRect().height || height;
+      used += actualHeight;
     });
   }
 
   window.repaginateReport = paginate;
+  window.refreshPagination = function(){
+    if(!window.repaginateReport){ return; }
+    requestAnimationFrame(() => window.repaginateReport());
+  };
   window.addEventListener('load', () => {
     requestAnimationFrame(paginate);
   });
@@ -1409,7 +1573,6 @@ select{{width:100%;padding:12px 12px;border-radius:12px;border:1px solid var(--b
         <button class="btn" type="button" onclick="openCR()">Ouvrir le compte-rendu</button>
       </div>
 
-      <div class="hint">CR généré depuis METRONOME (Entries / Meetings / Companies / Projects).</div>
     </div>
   </div>
 
@@ -1639,6 +1802,7 @@ def render_cr(
     actions_html = f"""
       <div class="actions noPrint">
         <button class="btn" type="button" onclick="window.print()">Imprimer / PDF</button>
+        <button class="btn secondary editCompact" type="button" onclick="window.refreshPagination && window.refreshPagination()">Recalculer la mise en page</button>
         <button class="btn secondary editCompact" id="btnQualityCheck" type="button">Qualité du texte</button>
         <button class="btn secondary editCompact" id="btnAnalysis" type="button">Analyse</button>
         <button class="btn secondary editCompact" id="btnRange" type="button" onclick="toggleRangePanel()">Choisir une période</button>
@@ -1661,6 +1825,7 @@ def render_cr(
           </div>
         </div>
         <div class="rangeActions">
+          <button class="btn secondary" type="button" onclick="toggleRangePanel()">Fermer</button>
           <button class="btn secondary" type="button" onclick="clearRange()">Réinitialiser</button>
           <button class="btn" type="button" onclick="applyRange()">Appliquer</button>
         </div>
@@ -1807,7 +1972,7 @@ def render_cr(
             return ""
         zt = _escape(area_name)
         return f"""
-        <div class="zoneBlock reportBlock">
+        <div class="zoneBlock reportBlock" data-zone-id="{zt}">
           <div class="zoneTitle">
             <span>{zt}</span>
             <div class="zoneTools noPrint">
@@ -1944,13 +2109,7 @@ def render_cr(
             zones_html_parts.append(zone_table_html)
 
     zones_html = "".join(zones_html_parts)
-    report_note_html = """
-      <div class="reportBlock reportNote">
-        <div class="muted" style="font-weight:800">
-          TEMPO • Document généré automatiquement — vérifier les échéances critiques avant diffusion.
-        </div>
-      </div>
-    """
+    report_note_html = ""
 
     # -------------------------
     # CSS
@@ -1999,7 +2158,10 @@ body{{padding:14px 14px 14px 280px;}}
 .coverHeroCurve{{position:absolute;left:50%;bottom:-95px;width:135%;height:190px;transform:translateX(-50%);background:#fff;border-radius:50% 50% 0 0 / 100% 100% 0 0;z-index:2}}
 .coverHeroLogoWrap{{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:4;background:#fff;padding:10px 18px;border-radius:8px;box-shadow:0 6px 18px rgba(2,6,23,.12)}}
 .coverHeroLogo{{height:110px;width:auto;display:block}}
-.coverNoteCenter{{text-align:center;padding:2px 10px 8px 10px;font-weight:900}}
+.coverNoteCenter{{text-align:center;padding:10px 16px 12px 16px;font-weight:900;display:flex;flex-direction:column;align-items:center;gap:10px}}
+.coverAppNote{{margin-top:8px;font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:14px;line-height:1.45;color:#f97316;font-style:italic;font-weight:600;max-width:640px}}
+.coverQr{{margin-top:6px;height:110px;width:auto}}
+@media print{{.coverQr{{display:block!important}}}}
 .coverProjectTitle{{font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:22px;line-height:1.2;color:#f59e0b;font-weight:700;letter-spacing:.5px;text-transform:uppercase}}
 .coverCrTitle{{margin-top:10px;font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:22px;line-height:1.2;color:#0f3a40;font-weight:700}}
 .coverCrMeta{{margin-top:8px;font-family:"Arial Nova Cond Light","Arial Narrow",Arial,sans-serif;font-size:22px;line-height:1.2;color:#0f3a40;font-weight:700}}
@@ -2098,7 +2260,7 @@ body{{padding:14px 14px 14px 280px;}}
 .actions .btn,.actions .hiddenRowsSelect{{width:100%}}
 .btn{{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:11px 14px;border-radius:12px;border:1px solid var(--border);background:var(--accent);color:#fff;font-weight:950;cursor:pointer;text-decoration:none}}
 .btn.secondary{{background:#fff;color:var(--text);font-weight:900}}
-.rangePanel{{position:fixed;top:430px;left:14px;z-index:9998;width:248px;border:1px solid var(--border);border-radius:14px;padding:12px;background:#fff;display:flex;flex-direction:column;gap:10px;box-shadow:0 8px 24px rgba(2,6,23,.12)}}
+.rangePanel{{position:fixed;top:14px;left:14px;z-index:10001;width:248px;border:1px solid var(--border);border-radius:14px;padding:12px;background:#fff;display:flex;flex-direction:column;gap:10px;box-shadow:0 8px 24px rgba(2,6,23,.12);max-height:calc(100vh - 32px);overflow:auto}}
 .rangeFields{{display:flex;gap:12px;flex-wrap:wrap}}
 .rangeField{{display:flex;flex-direction:column;gap:6px;min-width:180px}}
 .rangeField label{{font-weight:900;font-size:12px}}
@@ -2163,12 +2325,14 @@ body{{padding:14px 14px 14px 280px;}}
 .entryComment{{margin-top:8px;padding-left:12px;border-left:3px solid #e2e8f0}}
 .tagReminderGreen{{color:#16a34a;font-weight:900}}
 .thumbA{{display:inline-flex}}
-.commentText{{font-weight:700;line-height:1.25}}
+.commentText{{font-weight:400;line-height:1.25}}
 .tagReminder{{color:#b91c1c;font-weight:900}}
 .annexTable{{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;border:1px solid var(--border)}}
 .annexTable thead{{display:table-header-group}}
 .annexTable th,.annexTable td{{border-bottom:1px solid var(--border);padding:8px 6px;text-align:left;vertical-align:top}}
 .annexTable td:first-child{{width:90px;color:#2563eb;font-weight:900}}
+.annexTable td:last-child{{text-align:right}}
+.annexTable td:last-child .annexLink{{display:inline-block;text-align:right}}
 .annexTable th{{font-weight:900;background:#1f4e4f;color:#fff}}
 .annexTable .annexLink{{color:#f97316;font-weight:800;text-decoration:none}}
 .annexTable tr:last-child td{{border-bottom:none}}
@@ -2211,6 +2375,7 @@ body{{padding:14px 14px 14px 280px;}}
     tempo_logo = _logo_data_url(LOGO_TEMPO_PATH)
     logo_rythme = _logo_data_url(LOGO_RYTHME_PATH)
     logo_tmark = _logo_data_url(LOGO_T_MARK_PATH)
+    qr_logo = _logo_data_url(LOGO_QR_PATH)
     cover_html = ""
 
     next_meeting_date = (meet_date or ref_date) + timedelta(days=7)
@@ -2244,6 +2409,12 @@ body{{padding:14px 14px 14px 280px;}}
           </div>
           <div contenteditable='true' class='nextMeetingLine3'>BASE VIE — adresse à compléter</div>
         </div>
+        <div class='coverAppNote'>
+          Téléchargez gratuitement l’application de gestion de projet METRONOME. L’application développée par TEMPO
+          dédiée à la gestion de projet. Celle-ci vous permettra de retrouver l’intégralité des réunions de synthèse, comptes rendu,
+          planning et suivi des tâches dans votre smartphone.
+        </div>
+        {("<img class='coverQr' src='" + qr_logo + "' alt='QR code METRONOME' />") if qr_logo else ""}
       </div>
     """
 
@@ -2332,7 +2503,7 @@ body{{padding:14px 14px 14px 280px;}}
       </div>
       <div class="docFooter">
         <div class="footLeft">{"<img class='footImg footMark' src='" + logo_tmark + "' alt='' />" if logo_tmark else ""}</div>
-        <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">104/106 rue Oberkampf (Cité du figuier) — 75011 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
+        <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">35, rue Beaubourg, 75003 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
         <div class="footRight"></div>
       </div>
     </section>
@@ -2352,7 +2523,7 @@ body{{padding:14px 14px 14px 280px;}}
         </div>
         <div class="docFooter">
           <div class="footLeft">{"<img class='footImg footMark' src='" + logo_tmark + "' alt='' />" if logo_tmark else ""}</div>
-          <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">104/106 rue Oberkampf (Cité du figuier) — 75011 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
+          <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">35, rue Beaubourg, 75003 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
           <div class="footRight"></div>
         </div>
       </section>
@@ -2369,7 +2540,7 @@ body{{padding:14px 14px 14px 280px;}}
       </div>
       <div class="docFooter">
         <div class="footLeft">{"<img class='footImg footMark' src='" + logo_tmark + "' alt='' />" if logo_tmark else ""}</div>
-        <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">104/106 rue Oberkampf (Cité du figuier) — 75011 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
+        <div class="footCenter"><div style="font-family:'Arial Nova Cond Light','Arial Narrow',Arial,sans-serif;font-size:12px;font-weight:700;color:#111">TEMPO</div><div class="tempoLegal">35, rue Beaubourg, 75003 Paris<br/>SAS au capital de 1 000 Euros - RCS Créteil N° 892 046 301 - APE 7112 B</div>{("<img class='footImg footRythme' src='" + logo_rythme + "' alt='' />") if logo_rythme else ""}</div>
         <div class="footRight"></div>
       </div>
     </section>
@@ -2488,24 +2659,46 @@ def api_memos(project: str = Query("", alias="project"), area: str = Query("", a
         return JSONResponse({"error": str(ex)}, status_code=500)
 
 
-def _quality_payload(text: str, language: str = "fr") -> Dict[str, object]:
-    if not text.strip():
+def _quality_payload(
+    text: str,
+    language: str = "fr",
+    ignore_terms: Optional[set[str]] = None,
+) -> Dict[str, object]:
+    cleaned_text = re.sub(r"\bnan\b", "", text, flags=re.IGNORECASE).strip()
+    if not cleaned_text:
         return {"score": 100, "total": 0, "issues": []}
+    ignore_terms = {t.lower() for t in (ignore_terms or set()) if t}
     url = "https://api.languagetool.org/v2/check"
-    data = urllib.parse.urlencode({"language": language, "text": text}).encode("utf-8")
+    data = urllib.parse.urlencode({"language": language, "text": cleaned_text}).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
     with urllib.request.urlopen(req, timeout=10) as resp:
         payload = json.loads(resp.read().decode("utf-8"))
     matches = payload.get("matches", [])
-    words = max(1, len(re.findall(r"\w+", text)))
-    errors = len(matches)
+    words = max(1, len(re.findall(r"\w+", cleaned_text)))
+    errors = 0
     score = max(0, int(100 - (errors / words) * 100))
     issues = []
     for m in matches:
+        offset = m.get("offset")
+        length = m.get("length")
+        match_text = (
+            cleaned_text[offset : offset + length] if offset is not None and length is not None else ""
+        )
+        match_text_stripped = match_text.strip()
+        if not match_text_stripped:
+            continue
+        match_lower = match_text_stripped.lower()
+        if match_lower == "nan" or match_lower in ignore_terms:
+            continue
+        if match_text_stripped.isupper() and len(match_text_stripped) > 2:
+            continue
+        if match_text_stripped.istitle() and len(match_text_stripped) > 2:
+            continue
         context = m.get("context", {}) or {}
         repl = ", ".join([r.get("value", "") for r in m.get("replacements", []) if r.get("value")])
         category = (m.get("rule", {}) or {}).get("category", {}) or {}
+        errors += 1
         issues.append(
             {
                 "message": m.get("message", ""),
@@ -2514,8 +2707,12 @@ def _quality_payload(text: str, language: str = "fr") -> Dict[str, object]:
                 "context_length": context.get("length"),
                 "replacements": repl,
                 "category": category.get("name", ""),
+                "offset": offset,
+                "length": length,
+                "text": cleaned_text,
             }
         )
+    score = max(0, int(100 - (errors / words) * 100))
     return {"score": score, "total": errors, "issues": issues}
 
 
@@ -2532,7 +2729,7 @@ def api_quality(
         rem_df = reminders_for_project(project_title=project, ref_date=ref_date, max_level=8)
         fol_df = followups_for_project(project_title=project, ref_date=ref_date, exclude_entry_ids=set())
 
-        def _items(df: pd.DataFrame) -> List[Dict[str, str]]:
+        def _items(df: pd.DataFrame, ignore_terms: set[str]) -> List[Dict[str, str]]:
             if df.empty:
                 return []
             df = _explode_areas(df.copy())
@@ -2541,19 +2738,46 @@ def api_quality(
                 title = str(r.get(E_COL_TITLE, "") or "").strip()
                 comment = str(r.get(E_COL_TASK_COMMENT_TEXT, "") or "").strip()
                 text = " ".join([t for t in [title, comment] if t]).strip()
+                text = re.sub(r"\bnan\b", "", text, flags=re.IGNORECASE).strip()
                 if not text:
                     continue
-                out.append({"area": str(r.get("__area_list__", "Général")), "text": text})
+                area = str(r.get("__area_list__", "Général"))
+                ignore_terms.add(area.lower())
+                ignore_terms.update(_split_words(area))
+                out.append({"area": area, "text": text})
             return out
-
-        items = _items(edf) + _items(rem_df) + _items(fol_df)
+        ignore_terms: set[str] = set()
+        if project:
+            ignore_terms.add(project.lower())
+            ignore_terms.update(_split_words(project))
+        company_terms = pd.concat(
+            [
+                edf.get(E_COL_COMPANY_TASK, pd.Series(dtype=str)),
+                rem_df.get(E_COL_COMPANY_TASK, pd.Series(dtype=str)),
+                fol_df.get(E_COL_COMPANY_TASK, pd.Series(dtype=str)),
+            ],
+            ignore_index=True,
+        )
+        owner_terms = pd.concat(
+            [
+                edf.get(E_COL_OWNER, pd.Series(dtype=str)),
+                rem_df.get(E_COL_OWNER, pd.Series(dtype=str)),
+                fol_df.get(E_COL_OWNER, pd.Series(dtype=str)),
+            ],
+            ignore_index=True,
+        )
+        for val in pd.concat([company_terms, owner_terms], ignore_index=True).dropna().astype(str):
+            ignore_terms.add(val.lower())
+            ignore_terms.update(_split_words(val))
+        items = _items(edf, ignore_terms) + _items(rem_df, ignore_terms) + _items(fol_df, ignore_terms)
         issues_by_area: Dict[str, List[Dict[str, object]]] = {}
         total_errors = 0
         total_words = 0
         for it in items:
-            payload = _quality_payload(it["text"], language="fr")
+            payload = _quality_payload(it["text"], language="fr", ignore_terms=ignore_terms)
             total_errors += int(payload.get("total", 0))
-            total_words += max(1, len(re.findall(r"\w+", it["text"])))
+            cleaned = re.sub(r"\bnan\b", "", it["text"], flags=re.IGNORECASE)
+            total_words += max(1, len(re.findall(r"\w+", cleaned)))
             if payload.get("issues"):
                 issues_by_area.setdefault(it["area"], []).extend(payload["issues"])
         score = max(0, int(100 - (total_errors / max(1, total_words)) * 100))
