@@ -2236,7 +2236,7 @@ body{{padding:14px 14px 14px 280px;}}
 .actions .btn,.actions .hiddenRowsSelect{{width:100%}}
 .btn{{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:11px 14px;border-radius:12px;border:1px solid var(--border);background:var(--accent);color:#fff;font-weight:950;cursor:pointer;text-decoration:none}}
 .btn.secondary{{background:#fff;color:var(--text);font-weight:900}}
-.rangePanel{{position:fixed;top:430px;left:14px;z-index:9998;width:248px;border:1px solid var(--border);border-radius:14px;padding:12px;background:#fff;display:flex;flex-direction:column;gap:10px;box-shadow:0 8px 24px rgba(2,6,23,.12)}}
+.rangePanel{{position:fixed;top:14px;left:14px;z-index:10001;width:248px;border:1px solid var(--border);border-radius:14px;padding:12px;background:#fff;display:flex;flex-direction:column;gap:10px;box-shadow:0 8px 24px rgba(2,6,23,.12);max-height:calc(100vh - 32px);overflow:auto}}
 .rangeFields{{display:flex;gap:12px;flex-wrap:wrap}}
 .rangeField{{display:flex;flex-direction:column;gap:6px;min-width:180px}}
 .rangeField label{{font-weight:900;font-size:12px}}
